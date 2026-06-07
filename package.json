@@ -1,0 +1,28 @@
+{
+  "name": "richland-seller-leads",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "parse:tax-lien-list": "node scripts/parse-tax-lien-list.mjs",
+    "scrape:pre-foreclosure": "node scripts/scrape-pre-foreclosure.mjs",
+    "scrape:lis-pendens": "node scripts/scrape-lis-pendens.mjs",
+    "scrape:probate-estates": "node scripts/scrape-probate-estates.mjs --headed",
+    "scrape:evictions": "node scripts/scrape-evictions.mjs",
+    "scrape:code-violations": "node scripts/scrape-code-violations.mjs",
+    "scrape:clerk:session": "node scripts/clerk-save-session.mjs",
+    "scrape:all": "node scripts/scrape-all.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "^6.0.227",
+    "playwright": "^1.60.0",
+    "sharp": "^0.34.5",
+    "tesseract.js": "^7.0.0"
+  }
+}

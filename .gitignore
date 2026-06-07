@@ -1,0 +1,31 @@
+# Local data — never commit PII or scraped records
+data/
+node_modules/
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Playwright browsers cache (optional local install)
+.playwright/
+
+# Exports (regenerated)
+exports/*.csv
+exports/*.xlsx
