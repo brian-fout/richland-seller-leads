@@ -2,17 +2,20 @@
  * Parse Richland County Prosecutor's Delinquent Land List PDF
  * into structured CSV and JSON (tax lien leads).
  *
- * Usage: node scripts/parse-tax-lien-list.mjs [path-to-pdf]
+ * Usage:
+ *   npm run parse:tax-lien-list
+ *   npm run parse:tax-lien-list -- path/to/Prosecutor List.pdf
+ *   Drop PDF in data/counties/richland/inbox/ — auto-discovered on run.
  */
 
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { paths } from "../src/core/county-context.mjs";
+import { findLatestTaxLienPdf } from "../src/core/tax-lien-discovery.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_PDF =
-  "c:/Users/brian/Downloads/Prosecutor List 10-21-2025.pdf";
 
 const PARCEL_ID_RE = /\d{3}-\d{2}-\d{3}-\d{2}-\d{3}/;
 const CSZ_RE = /^(.+?)\s+([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/;
@@ -422,10 +425,24 @@ function toCsv(parcels) {
   ].join("\n");
 }
 
+function resolvePdfPath(argvPath) {
+  if (argvPath && fs.existsSync(argvPath)) return argvPath;
+  const p = paths();
+  const discovered = findLatestTaxLienPdf(p.dataRoot);
+  if (discovered) return discovered.path;
+  const legacy = path.join(p.legacyRoot, "tax-lien-inbox");
+  const legacyHit = findLatestTaxLienPdf(legacy);
+  if (legacyHit) return legacyHit.path;
+  return null;
+}
+
 async function main() {
-  const pdfPath = process.argv[2] ?? DEFAULT_PDF;
-  if (!fs.existsSync(pdfPath)) {
-    console.error(`PDF not found: ${pdfPath}`);
+  const argvPdf = process.argv[2] && !process.argv[2].startsWith("--") ? process.argv[2] : null;
+  const pdfPath = resolvePdfPath(argvPdf);
+  if (!pdfPath) {
+    console.error("PDF not found. Options:");
+    console.error("  1. Drop prosecutor cert PDF in data/counties/richland/inbox/");
+    console.error("  2. npm run parse:tax-lien-list -- path/to/list.pdf");
     process.exit(1);
   }
 
@@ -440,8 +457,8 @@ async function main() {
     }))
   );
 
-  const outDir = path.join(__dirname, "..", "data");
-  fs.mkdirSync(outDir, { recursive: true });
+  const outDir = paths().dataRoot;
+  fs.mkdirSync(path.join(outDir, "inbox"), { recursive: true });
 
   const baseName = outputBaseName(pdfPath);
   const jsonPath = path.join(outDir, `${baseName}.json`);

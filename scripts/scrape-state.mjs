@@ -1,27 +1,31 @@
 /**
- * Tracks last successful run per source for incremental scraping.
- * State file: data/scrape-state.json
+ * @shared Tracks last successful run per source for incremental scraping.
+ * State file: data/counties/{county}/scrape-state.json (or legacy data/)
  */
 
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
+import { dataRoot } from "../src/core/county-context.mjs";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.join(__dirname, "..", "data");
-const STATE_PATH = path.join(DATA_DIR, "scrape-state.json");
+function DATA_DIR() {
+  return dataRoot();
+}
+
+function STATE_PATH() {
+  return path.join(DATA_DIR(), "scrape-state.json");
+}
 
 export function readState() {
   try {
-    return JSON.parse(fs.readFileSync(STATE_PATH, "utf8"));
+    return JSON.parse(fs.readFileSync(STATE_PATH(), "utf8"));
   } catch {
     return {};
   }
 }
 
 export function writeState(state) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
+  fs.mkdirSync(DATA_DIR(), { recursive: true });
+  fs.writeFileSync(STATE_PATH(), JSON.stringify(state, null, 2));
 }
 
 export function getSourceState(sourceId) {
@@ -74,7 +78,7 @@ export function onOrAfterUsDate(value, sinceUsDate) {
 }
 
 export function loadCanonicalRecords(filename) {
-  const filePath = path.join(DATA_DIR, filename);
+  const filePath = path.join(DATA_DIR(), filename);
   try {
     const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
     return Array.isArray(raw) ? raw : (raw.records ?? []);
@@ -84,8 +88,8 @@ export function loadCanonicalRecords(filename) {
 }
 
 export function saveCanonicalRecords(filename, records) {
-  const filePath = path.join(DATA_DIR, filename);
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const filePath = path.join(DATA_DIR(), filename);
+  fs.mkdirSync(DATA_DIR(), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(records, null, 2));
 }
 
@@ -119,12 +123,12 @@ export function toCsv(records) {
 
 export function writeRunOutputs(baseName, deltaRecords, canonicalRecords) {
   const stamp = new Date().toISOString().slice(0, 10);
-  const deltaJson = path.join(DATA_DIR, `${baseName}-${stamp}.json`);
-  const deltaCsv = path.join(DATA_DIR, `${baseName}-${stamp}.csv`);
-  const canonicalJson = path.join(DATA_DIR, `${baseName}-canonical.json`);
-  const canonicalCsv = path.join(DATA_DIR, `${baseName}-canonical.csv`);
+  const deltaJson = path.join(DATA_DIR(), `${baseName}-${stamp}.json`);
+  const deltaCsv = path.join(DATA_DIR(), `${baseName}-${stamp}.csv`);
+  const canonicalJson = path.join(DATA_DIR(), `${baseName}-canonical.json`);
+  const canonicalCsv = path.join(DATA_DIR(), `${baseName}-canonical.csv`);
 
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(DATA_DIR(), { recursive: true });
   fs.writeFileSync(deltaJson, JSON.stringify(deltaRecords, null, 2));
   fs.writeFileSync(deltaCsv, toCsv(deltaRecords));
   fs.writeFileSync(canonicalJson, JSON.stringify(canonicalRecords, null, 2));
@@ -144,8 +148,8 @@ export function dayOutputPaths(baseName, usDateLabel) {
   const stamp = dayFileStamp(usDateLabel);
   return {
     stamp,
-    json: path.join(DATA_DIR, `${baseName}-day-${stamp}.json`),
-    csv: path.join(DATA_DIR, `${baseName}-day-${stamp}.csv`),
+    json: path.join(DATA_DIR(), `${baseName}-day-${stamp}.json`),
+    csv: path.join(DATA_DIR(), `${baseName}-day-${stamp}.csv`),
   };
 }
 
@@ -165,24 +169,24 @@ export function loadDayRecords(baseName, usDateLabel) {
 
 export function writeDayOutputs(baseName, usDateLabel, records) {
   const { stamp, json, csv } = dayOutputPaths(baseName, usDateLabel);
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(DATA_DIR(), { recursive: true });
   fs.writeFileSync(json, JSON.stringify(records, null, 2));
   fs.writeFileSync(csv, toCsv(records));
   return { stamp, json, csv };
 }
 
 export function loadAllDayRecords(baseName, keyFn) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(DATA_DIR(), { recursive: true });
   const prefix = `${baseName}-day-`;
   const files = fs
-    .readdirSync(DATA_DIR)
+    .readdirSync(DATA_DIR())
     .filter((f) => f.startsWith(prefix) && f.endsWith(".json"))
     .sort();
 
   let records = [];
   for (const file of files) {
     try {
-      const raw = JSON.parse(fs.readFileSync(path.join(DATA_DIR, file), "utf8"));
+      const raw = JSON.parse(fs.readFileSync(path.join(DATA_DIR(), file), "utf8"));
       const rows = Array.isArray(raw) ? raw : (raw.records ?? []);
       records = mergeByKey(records, rows, keyFn);
     } catch {
@@ -194,8 +198,8 @@ export function loadAllDayRecords(baseName, keyFn) {
 
 export function writeCanonicalFromDays(baseName, keyFn) {
   const canonical = loadAllDayRecords(baseName, keyFn);
-  const canonicalJson = path.join(DATA_DIR, `${baseName}-canonical.json`);
-  const canonicalCsv = path.join(DATA_DIR, `${baseName}-canonical.csv`);
+  const canonicalJson = path.join(DATA_DIR(), `${baseName}-canonical.json`);
+  const canonicalCsv = path.join(DATA_DIR(), `${baseName}-canonical.csv`);
   fs.writeFileSync(canonicalJson, JSON.stringify(canonical, null, 2));
   fs.writeFileSync(canonicalCsv, toCsv(canonical));
   return { canonical, canonicalJson, canonicalCsv };
@@ -210,13 +214,18 @@ export function monthOutputPaths(baseName, year, month) {
   const stamp = monthFileStamp(year, month);
   return {
     stamp,
-    json: path.join(DATA_DIR, `${baseName}-month-${stamp}.json`),
-    csv: path.join(DATA_DIR, `${baseName}-month-${stamp}.csv`),
+    json: path.join(DATA_DIR(), `${baseName}-month-${stamp}.json`),
+    csv: path.join(DATA_DIR(), `${baseName}-month-${stamp}.csv`),
   };
 }
 
 export function monthOutputExists(baseName, year, month) {
   return fs.existsSync(monthOutputPaths(baseName, year, month).json);
+}
+
+export function monthOutputHasRecords(baseName, year, month) {
+  if (!monthOutputExists(baseName, year, month)) return false;
+  return loadMonthRecords(baseName, year, month).length > 0;
 }
 
 export function loadMonthRecords(baseName, year, month) {
@@ -231,24 +240,24 @@ export function loadMonthRecords(baseName, year, month) {
 
 export function writeMonthOutputs(baseName, year, month, records) {
   const { stamp, json, csv } = monthOutputPaths(baseName, year, month);
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(DATA_DIR(), { recursive: true });
   fs.writeFileSync(json, JSON.stringify(records, null, 2));
   fs.writeFileSync(csv, toCsv(records));
   return { stamp, json, csv };
 }
 
 export function loadAllMonthRecords(baseName, keyFn) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(DATA_DIR(), { recursive: true });
   const prefix = `${baseName}-month-`;
   const files = fs
-    .readdirSync(DATA_DIR)
+    .readdirSync(DATA_DIR())
     .filter((f) => f.startsWith(prefix) && f.endsWith(".json"))
     .sort();
 
   let records = [];
   for (const file of files) {
     try {
-      const raw = JSON.parse(fs.readFileSync(path.join(DATA_DIR, file), "utf8"));
+      const raw = JSON.parse(fs.readFileSync(path.join(DATA_DIR(), file), "utf8"));
       const rows = Array.isArray(raw) ? raw : (raw.records ?? []);
       records = mergeByKey(records, rows, keyFn);
     } catch {
@@ -260,8 +269,8 @@ export function loadAllMonthRecords(baseName, keyFn) {
 
 export function writeCanonicalFromMonths(baseName, keyFn) {
   const canonical = loadAllMonthRecords(baseName, keyFn);
-  const canonicalJson = path.join(DATA_DIR, `${baseName}-canonical.json`);
-  const canonicalCsv = path.join(DATA_DIR, `${baseName}-canonical.csv`);
+  const canonicalJson = path.join(DATA_DIR(), `${baseName}-canonical.json`);
+  const canonicalCsv = path.join(DATA_DIR(), `${baseName}-canonical.csv`);
   fs.writeFileSync(canonicalJson, JSON.stringify(canonical, null, 2));
   fs.writeFileSync(canonicalCsv, toCsv(canonical));
   return { canonical, canonicalJson, canonicalCsv };

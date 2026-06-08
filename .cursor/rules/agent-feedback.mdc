@@ -1,0 +1,41 @@
+---
+description: Use agent ground-truth feedback when discussing ARV, offers, or lead quality
+alwaysApply: true
+---
+
+# Agent feedback loop
+
+The user gets model ARV/leads from this repo but **validates with a human agent before offers**.
+Agent input is **free-form** (texts, calls, emails) — not a fixed schema.
+
+## Data files (per county)
+
+- `data/counties/{county}/agent-feedback.jsonl` — append-only raw notes (source of truth)
+- `data/counties/{county}/agent-calibration.json` — latest parsed hints per parcel
+
+## When user pastes agent notes in chat
+
+1. **Record them** — run or suggest:
+   ```bash
+   npm run agent:feedback -- --parcel PARCEL_ID --text "paste here"
+   ```
+   Or `--dry-run` first to show parsed fields without saving.
+
+2. **Compare** model vs agent on that parcel:
+   - Our ARV: `npm run estimate:arv -- PARCEL_ID`
+   - Agent calibration: `npm run agent:feedback -- --show PARCEL_ID`
+
+3. **Use agent values for offer decisions** — agent ARV/verdict overrides model for go/no-go; model is the starting point only.
+
+4. **Improve accuracy over time** — agent-confirmed ARV ranges belong in calibration; mention drift when model and agent disagree by >10%.
+
+## Parsed fields (best-effort)
+
+`arv_amount`, `arv_range`, `rehab_estimate`, `offer_max`, `verdict` (pursue/maybe/pass)
+
+Never require perfect parsing — always preserve `raw_text`.
+
+## Ranking impact
+
+- `agent_verdict: pursue` → small rank boost
+- `agent_verdict: pass` → deprioritize (user may still dismiss formally)

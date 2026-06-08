@@ -1,13 +1,12 @@
 /**
- * Accept CaseLook disclaimer and optionally reuse cookies.
+ * @county richland — Probate court session helpers (CaseLook disclaimer + cookies).
  */
 
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
+import { dataRoot } from "../src/core/county-context.mjs";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const DATA_DIR = path.join(__dirname, "..", "data");
+export const DATA_DIR = dataRoot();
 export const COOKIE_PATH = path.join(DATA_DIR, "probate-cookies.json");
 export const BASE_URL = "https://probatecourt.richlandcountyoh.gov";
 

@@ -8,6 +8,7 @@
  *   npm run scrape:probate-estates
  *   npm run scrape:probate-estates -- --from 01/01/2026 --to 03/31/2026
  *   node scripts/scrape-probate-estates.mjs --headless   # OCR only, usually fails
+ *   node scripts/scrape-probate-estates.mjs --no-details # skip decedent address fetch
  */
 
 import fs from "fs";
@@ -29,6 +30,7 @@ import {
   writeDayOutputs,
   writeCanonicalFromDays,
 } from "./scrape-state.mjs";
+import { enrichProbateRecords } from "./enrich-probate-addresses.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE_ID = "probate-estates";
@@ -59,6 +61,7 @@ function parseArgs() {
     headed: !headless || process.argv.includes("--headed") || process.argv.includes("--interactive"),
     byMonth: process.argv.includes("--by-month"),
     force: process.argv.includes("--force"),
+    details: !process.argv.includes("--no-details"),
     captchaArg,
   };
 
@@ -125,6 +128,12 @@ function normalizeRecord(raw) {
     case_type: raw.case_type ?? "Estate",
     status: raw.status ?? null,
     detail_url: raw.detail_url ?? null,
+    street_address: raw.street_address ?? null,
+    city: raw.city ?? null,
+    state: raw.state ?? null,
+    zip: raw.zip ?? null,
+    attorney: raw.attorney ?? null,
+    filing_type: raw.filing_type ?? null,
   };
 }
 
@@ -565,8 +574,17 @@ async function scrapeProbateEstates(periods, options) {
       }
 
       console.error(`Searching estate filings filed ${period.label}...`);
-      const records = await searchEstatePeriod(page, period, options);
+      let records = await searchEstatePeriod(page, period, options);
       console.error(`  ${records.length} case(s)`);
+
+      if (options.details && records.length) {
+        console.error(`  Fetching decedent addresses from detail pages...`);
+        const { records: enriched, stats } = await enrichProbateRecords(page, records, { delayMs: 400 });
+        records = enriched;
+        console.error(`  Addresses found: ${stats.withAddress}/${records.length}`);
+      } else if (!options.details && records.length) {
+        console.error("  Skipping detail pages (--no-details)");
+      }
 
       const { json, csv } = writeDayOutputs("probate-estates", period.label, records);
       console.error(`  Wrote ${json}`);

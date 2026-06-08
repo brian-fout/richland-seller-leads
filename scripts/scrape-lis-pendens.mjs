@@ -5,8 +5,8 @@
  * foreclosure process — as opposed to late-stage sheriff sale auctions.
  *
  * Usage:
- *   node scripts/scrape-lis-pendens.mjs              # since last run (Jan 1 on first run)
- *   node scripts/scrape-lis-pendens.mjs --force      # ignore last run, from Jan 1 this year
+ *   node scripts/scrape-lis-pendens.mjs              # incremental (Jan 1 this year on first run)
+ *   node scripts/scrape-lis-pendens.mjs --force      # re-scrape Jan 1 this year–today
  *   node scripts/scrape-lis-pendens.mjs --from 01/01/2024 --to 12/31/2024
  *   node scripts/scrape-lis-pendens.mjs --all        # full history (2000–today, by year)
  */
@@ -16,11 +16,13 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { chromium } from "playwright";
 import {
+  bootstrapUsDate,
   incrementalFromUsDate,
   markSourceRun,
   mergeByKey,
   loadCanonicalRecords,
   writeRunOutputs,
+  parseUsDate,
 } from "./scrape-state.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,25 +63,49 @@ function parseArgs() {
   return { mode: "incremental" };
 }
 
+function splitIntoYearlyRanges(fromUs, toUs, labelPrefix = "") {
+  const from = parseUsDate(fromUs);
+  const to = parseUsDate(toUs);
+  if (!from || !to) {
+    return [{ label: labelPrefix || `${fromUs}-${toUs}`, from: fromUs, to: toUs }];
+  }
+  if (from > to) return [];
+
+  const ranges = [];
+  for (let year = from.getFullYear(); year <= to.getFullYear(); year++) {
+    const yearStart = new Date(year, 0, 1);
+    const yearEnd = new Date(year, 11, 31);
+    const rangeStart = yearStart < from ? from : yearStart;
+    const rangeEnd = yearEnd > to ? to : yearEnd;
+    ranges.push({
+      label: labelPrefix ? `${labelPrefix}-${year}` : String(year),
+      from: fmtDate(rangeStart),
+      to: fmtDate(rangeEnd),
+    });
+  }
+  return ranges;
+}
+
 function buildDateRanges(options) {
   const today = new Date();
+  const todayLabel = fmtDate(today);
 
-  if (options.mode === "incremental" || options.mode === "force") {
-    const from =
-      options.mode === "force"
-        ? `01/01/${today.getFullYear()}`
-        : incrementalFromUsDate(SOURCE_ID);
-    return [{ label: options.mode, from, to: fmtDate(today) }];
+  if (options.mode === "incremental") {
+    return splitIntoYearlyRanges(incrementalFromUsDate(SOURCE_ID), todayLabel, "incremental");
+  }
+
+  if (options.mode === "force") {
+    return splitIntoYearlyRanges(bootstrapUsDate(), todayLabel, "force");
   }
 
   if (options.mode === "days") {
     const start = new Date(today);
     start.setDate(start.getDate() - options.daysBack);
-    return [{ label: `last-${options.daysBack}-days`, from: fmtDate(start), to: fmtDate(today) }];
+    return splitIntoYearlyRanges(fmtDate(start), todayLabel, `last-${options.daysBack}-days`);
   }
 
   if (options.mode === "range") {
-    return [{ label: `${options.from}-${options.to}`, from: options.from, to: options.to }];
+    return splitIntoYearlyRanges(options.from, options.to, `${options.from}-${options.to}`);
   }
 
   const endYear = today.getFullYear();
@@ -96,6 +122,11 @@ function buildDateRanges(options) {
 
 function clean(text) {
   return String(text ?? "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
     .replace(/\u00a0/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -258,6 +289,14 @@ async function setDateRange(dyn, from, to) {
     $("#FROMDATE").datebox("setValue", from);
     $("#TODATE").datebox("setValue", to);
   }, { from, to });
+
+  const actual = await dyn.evaluate(() => ({
+    from: $("#FROMDATE").datebox("getValue"),
+    to: $("#TODATE").datebox("getValue"),
+  }));
+  if (actual.from !== from || actual.to !== to) {
+    throw new Error(`Date fields not set (got ${actual.from} – ${actual.to}, want ${from} – ${to})`);
+  }
 }
 
 async function setRecordsPerPage(criteria, value) {
@@ -452,13 +491,23 @@ async function main() {
   const ranges = buildDateRanges(options);
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
-  const range = ranges[0];
+  if (ranges.length === 0) {
+    const canonical = loadCanonicalRecords("lis-pendens-canonical.json");
+    console.error("Already up to date — no new recorded dates to search.");
+    console.error(`Canonical total:   ${canonical.length}`);
+    return;
+  }
+
   if (options.mode === "all") {
     console.error(
       `Full history scrape: ${ranges.length} year-range(s) from ${options.startYear} to today`
     );
+  } else if (ranges.length === 1) {
+    console.error(`Recorded date range: ${ranges[0].from} – ${ranges[0].to}`);
   } else {
-    console.error(`Recorded date range: ${range.from} – ${range.to}`);
+    console.error(
+      `Recorded date search: ${ranges.length} year chunk(s) from ${ranges[0].from} to ${ranges[ranges.length - 1].to}`
+    );
   }
 
   const delta = await scrapeLisPendens(ranges);
@@ -474,7 +523,10 @@ async function main() {
     canonical
   );
 
-  markSourceRun(SOURCE_ID, { last_from_date: range.from, last_to_date: range.to });
+  markSourceRun(SOURCE_ID, {
+    last_from_date: ranges[0].from,
+    last_to_date: ranges[ranges.length - 1].to,
+  });
 
   console.error(`Fetched this run:  ${delta.length}`);
   console.error(`Canonical total:   ${canonical.length}`);

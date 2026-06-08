@@ -1,0 +1,21 @@
+---
+description: Remind that Schneider Beacon is spot-check only; CAMA powers ARV and bulk data
+alwaysApply: true
+---
+
+# Beacon — use very sparingly
+
+Richland Schneider Beacon caused an **IP ban** on bulk automated scraping. Treat Beacon as **headed spot-checks only**, not a pipeline source.
+
+## Default guidance (remind the user when Beacon comes up)
+
+- **ARV, comps, lead ranking, batch refresh** → CAMA / auditor bulk (`batch:arv`, `richland:import:cama`, `comp-index-auditor.jsonl`). **Do not suggest Beacon for these.**
+- **Beacon is optional** for fresher owner on a **single parcel** or tiny manual check.
+- **Avoid** `--county`, `--then-county`, and large `--limit` runs unless the user explicitly adds `--confirm-bulk` and accepts ban risk.
+- **Preferred command pattern:**
+  ```bash
+  npm run enrich:beacon -- --parcel PARCEL_ID --headed --delay-ms 3000
+  ```
+- **Bulk alternative:** email `support@schneidergis.com` for parcel/owner export.
+
+When the user asks to run Beacon or enrich owners at scale, **push back once** toward CAMA and small spot-checks unless they clearly want a rare bulk run with `--confirm-bulk`.

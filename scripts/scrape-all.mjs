@@ -40,11 +40,14 @@ try {
 
   run("Code violations (Mansfield Building & Codes)", "node scripts/scrape-code-violations.mjs");
 
+  console.error("\n========== Clerk foreclosures (CAPTCHA — run separately) ==========");
+  console.error("  npm run scrape:clerk:session          # one-time CAPTCHA → save cookies");
+  console.error("  npm run scrape:clerk-foreclosures     # civil foreclosure filings");
+
   run("Probate estates (CaseLook — solve CAPTCHA in browser)", "node scripts/scrape-probate-estates.mjs");
 
   console.error("\n========== Done ==========");
   console.error("Output files are in data/");
-  console.error("Clerk foreclosure filings (one-time CAPTCHA): npm run scrape:clerk:session");
 } catch (err) {
   console.error("\nScrape-all failed:", err.message);
   process.exit(1);
