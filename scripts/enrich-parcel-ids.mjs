@@ -22,10 +22,11 @@ import {
   mergeByKey,
   toCsv,
 } from "./scrape-state.mjs";
+import { personPartyNames } from "../src/core/name-match.mjs";
 import {
   lookupParcelByAddress,
+  lookupParcelByOwnerName,
   applyParcelLookup,
-  needsParcelLookup,
   recordStreet,
 } from "./auditor-gis.mjs";
 import { paths } from "../src/core/county-context.mjs";
@@ -72,6 +73,69 @@ const SOURCE_CONFIG = {
   },
 };
 
+function addressVariants(street) {
+  if (!street) return [];
+  const variants = [street];
+  const withoutLot = street.replace(/\s+LOT\s+[\w-]+.*$/i, "").trim();
+  if (withoutLot && withoutLot !== street) variants.push(withoutLot);
+  const withoutUnit = street.replace(/\s+(?:APT|APARTMENT|UNIT|STE|SUITE|#)\s*\S+.*$/i, "").trim();
+  if (withoutUnit && withoutUnit !== street && !variants.includes(withoutUnit)) variants.push(withoutUnit);
+  return [...new Set(variants)];
+}
+
+function ownerNameForRecord(record, sourceId) {
+  switch (sourceId) {
+    case "evictions":
+      return personPartyNames(record.defendant_names ?? record.label ?? "")[0] ?? null;
+    case "probate-estates":
+      return personPartyNames(record.decedent_name ?? record.label ?? "")[0] ?? null;
+    case "code-violations":
+      return personPartyNames(record.owner_name ?? record.applicant_name ?? "")[0] ?? null;
+    default:
+      return null;
+  }
+}
+
+async function lookupAddressVariants(street, cache, options) {
+  let last = { status: "not_found", match: null, candidates: [] };
+  for (const variant of addressVariants(street)) {
+    const lookup = await lookupParcelByAddress(variant, cache, options);
+    last = lookup;
+    if (lookup.status === "matched") return { lookup, variant };
+    if (lookup.status === "ambiguous") return { lookup, variant };
+  }
+  return { lookup: last, variant: street };
+}
+
+function applyOwnerLookup(record, lookup, source) {
+  if (lookup.status === "matched" && lookup.match) {
+    return {
+      ...record,
+      parcel_id: lookup.match.parcel_id,
+      auditor_parcel_address: lookup.match.parcel_address ?? null,
+      auditor_owner_name: lookup.match.owner_name ?? null,
+      parcel_lookup: "matched",
+      parcel_match_source: source,
+      parcel_match_score: lookup.match.match_score ?? null,
+    };
+  }
+  if (lookup.status === "ambiguous") {
+    return {
+      ...record,
+      parcel_lookup: "ambiguous",
+      parcel_candidates: lookup.candidates,
+      parcel_match_source: source,
+    };
+  }
+  return { ...record, parcel_lookup: record.parcel_lookup ?? "not_found", parcel_match_source: source };
+}
+
+function needsParcelResolution(record, sourceId, { force = false } = {}) {
+  if (force) return true;
+  if (record.parcel_id) return false;
+  return Boolean(recordStreet(record) || ownerNameForRecord(record, sourceId));
+}
+
 function parseArgs() {
   const sourceIdx = process.argv.indexOf("--source");
   const limitIdx = process.argv.indexOf("--limit");
@@ -108,38 +172,61 @@ function rewriteMonthFiles(baseName, enrichedByKey, keyFn) {
 
 async function enrichSource(sourceId, config, options, cache, report) {
   const records = config.load(config.keyFn);
-  let todo = records.filter((r) => needsParcelLookup(r, { force: options.force }));
+  let todo = records.filter((r) => needsParcelResolution(r, sourceId, { force: options.force }));
   if (options.limit) todo = todo.slice(0, options.limit);
 
   console.error(`\n=== ${sourceId} ===`);
   console.error(`  Records: ${records.length}, to lookup: ${todo.length}`);
 
   const enrichedByKey = new Map(records.map((r) => [config.keyFn(r), r]));
-  const stats = { matched: 0, not_found: 0, ambiguous: 0, skipped: 0 };
+  const stats = { matched: 0, not_found: 0, ambiguous: 0, skipped: 0, owner_matched: 0 };
 
   let dnsFailure = false;
 
   for (let i = 0; i < todo.length; i++) {
     const record = todo[i];
     const street = recordStreet(record);
+    const ownerName = ownerNameForRecord(record, sourceId);
     const label = `${i + 1}/${todo.length} ${config.keyFn(record)}`;
     try {
-      const lookup = await lookupParcelByAddress(street, cache, { delayMs: 50 });
-      const merged = applyParcelLookup(record, lookup);
-      enrichedByKey.set(config.keyFn(record), merged);
-      stats[lookup.status === "matched" ? "matched" : lookup.status]++;
+      let merged = record;
+      let status = "not_found";
 
-      if (lookup.status === "matched") {
-        console.error(`  ${label} → ${lookup.match.parcel_id}`);
+      if (street) {
+        const { lookup, variant } = await lookupAddressVariants(street, cache, { delayMs: 50 });
+        merged = applyParcelLookup(record, lookup);
+        if (variant !== street) merged.address_lookup_variant = variant;
+        status = lookup.status;
+      }
+
+      if (status !== "matched" && status !== "ambiguous" && ownerName) {
+        const byOwner = await lookupParcelByOwnerName(ownerName, cache, { delayMs: 50 });
+        merged = applyOwnerLookup(merged, byOwner, "gis_owner");
+        if (byOwner.status === "matched") {
+          stats.owner_matched++;
+          status = "matched";
+        } else if (byOwner.status === "ambiguous") {
+          status = "ambiguous";
+        }
+      }
+
+      enrichedByKey.set(config.keyFn(record), merged);
+      if (status === "matched") stats.matched++;
+      else if (status === "ambiguous") stats.ambiguous++;
+      else stats.not_found++;
+
+      if (status === "matched") {
+        console.error(`  ${label} → ${merged.parcel_id}`);
       } else {
-        console.error(`  ${label} → ${lookup.status}`);
+        console.error(`  ${label} → ${status}`);
         report.unmatched.push({
           source: sourceId,
           key: config.keyFn(record),
           address: street,
+          owner_name: ownerName,
           city: record.city ?? null,
-          status: lookup.status,
-          candidates: lookup.candidates ?? [],
+          status,
+          candidates: merged.parcel_candidates ?? [],
         });
       }
     } catch (err) {
@@ -170,7 +257,7 @@ async function enrichSource(sourceId, config, options, cache, report) {
   config.rewriteFiles(sourceId, enrichedByKey, config.keyFn);
   const { canonical, canonicalJson, canonicalCsv } = config.writeCanonical(config.keyFn);
 
-  console.error(`  Matched:   ${stats.matched}`);
+  console.error(`  Matched:   ${stats.matched} (${stats.owner_matched} via owner name)`);
   console.error(`  Not found: ${stats.not_found}`);
   console.error(`  Ambiguous: ${stats.ambiguous}`);
   if (stats.skipped) console.error(`  Errors:    ${stats.skipped}`);

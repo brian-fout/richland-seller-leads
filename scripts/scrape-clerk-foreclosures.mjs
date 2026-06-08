@@ -33,11 +33,12 @@ import {
   writeMonthOutputs,
   writeCanonicalFromMonths,
 } from "./scrape-state.mjs";
+import { paths } from "../src/core/county-context.mjs";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.join(__dirname, "..", "data");
+const p = paths();
+const DATA_DIR = p.dataRoot;
 const SOURCE_ID = "clerk-foreclosures";
-const DEBUG_HTML = path.join(DATA_DIR, "_clerk-last-results.html");
+const DEBUG_HTML = p.file("_clerk-last-results.html");
 const MONTH_RULE = "────────────────────────────────────────";
 
 async function pauseBeforeClose(options, { reason, seconds = 60 } = {}) {

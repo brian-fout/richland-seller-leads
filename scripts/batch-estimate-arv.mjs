@@ -12,6 +12,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { paths } from "../src/core/county-context.mjs";
 import { estimateArv, loadArvContext, slimArvResult } from "./estimate-arv.mjs";
+import { applyAgentArvLayer } from "../src/core/effective-arv.mjs";
 import { isVacantLandLead, rankLeads, vacantLandRankSummary } from "./lead-ranking.mjs";
 
 const p = paths();
@@ -162,8 +163,8 @@ function main() {
   if (args.merge && !args.county) {
     const leadCards = JSON.parse(fs.readFileSync(LEAD_CARDS, "utf8"));
     const cards = leadCards.cards ?? [];
-    for (const card of cards) {
-      card.arv = byParcelOut[card.parcel_id] ?? null;
+    for (let i = 0; i < cards.length; i++) {
+      cards[i] = applyAgentArvLayer({ ...cards[i], arv: byParcelOut[cards[i].parcel_id] ?? null });
     }
     leadCards.cards = rankLeads(cards);
     leadCards.arv_stats = stats;

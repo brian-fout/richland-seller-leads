@@ -81,7 +81,9 @@ export function compFromSaleEvent(rec, subject, parcelLookup) {
     style: (rec.style ?? parcel.style) != null ? String(rec.style ?? parcel.style) : "",
     distance: Math.round(distance * 1000) / 1000,
     saleDate: saleDate ? new Date(`${saleDate}T12:00:00`) : null,
-    renovated: isRenovatedSale(price, ppsf, saleToAssessed, condition, grade, RETAIL_CFG),
+    renovated:
+      rec.renovated_at_sale ??
+      isRenovatedSale(price, ppsf, saleToAssessed, condition, grade, RETAIL_CFG),
     address: rec.address ?? parcel.address ?? rec.parcel_id,
     parcel_id: rec.parcel_id,
     city,

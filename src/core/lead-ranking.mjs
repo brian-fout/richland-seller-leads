@@ -142,7 +142,7 @@ export function scoreLead(card) {
     score += arvBonus;
   }
 
-  const arvMid = arv?.most_likely_arv ?? arv?.mid ?? null;
+  const arvMid = card.effective_arv ?? arv?.most_likely_arv ?? arv?.mid ?? null;
   const valueAnchor = card.total_value ?? card.auditor?.total_appraised_value ?? null;
   if (arvMid > 0 && valueAnchor > 0) {
     const spread = arvMid - valueAnchor;
@@ -167,6 +167,29 @@ export function scoreLead(card) {
   } else if (agent?.agent_verdict === "maybe") {
     factors.push({ factor: "agent_verdict_maybe", delta: -10 });
     score -= 10;
+  }
+
+  if (agent?.agent_offer_max != null) {
+    const offerBonus = Math.min(20, Math.round(agent.agent_offer_max / 5000));
+    factors.push({ factor: "agent_offer_max", delta: offerBonus, offer_max: agent.agent_offer_max });
+    score += offerBonus;
+  }
+
+  if (card.needs_agent_review) {
+    const trustworthy = Boolean(arv?.trustworthy_for_wholesale);
+    const penalty = trustworthy ? -55 : -35;
+    factors.push({
+      factor: "needs_agent_review",
+      delta: penalty,
+      trustworthy_arv: trustworthy,
+      note: "Model ARV without agent verdict — deprioritize until agent:feedback",
+    });
+    score += penalty;
+  }
+
+  if (card.offer_ready) {
+    factors.push({ factor: "offer_ready", delta: 30 });
+    score += 30;
   }
 
   if (agent?.agent_arv != null && arv?.most_likely_arv != null) {

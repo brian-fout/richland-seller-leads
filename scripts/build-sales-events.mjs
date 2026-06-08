@@ -11,7 +11,18 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { paths } from "../src/core/county-context.mjs";
+import { isRenovatedSale } from "../src/counties/richland/condition.mjs";
 import { CAMA_DIR, parseSalesLine } from "./auditor-cama-dat.mjs";
+
+const RENOVATED_CFG = {
+  minRetailPrice: 35000,
+  minRetailPpsf: 35,
+  maxAsIsPrice: 28000,
+  maxAsIsPpsf: 24,
+  minStrongRetailPrice: 45000,
+  minStrongRetailPpsf: 42,
+  minStrongAssessedRatio: 1.35,
+};
 
 const p = paths();
 const COMP_INDEX_AUDITOR = p.compIndexAuditor;
@@ -34,6 +45,24 @@ function loadParcelIndex() {
 }
 
 function buildSaleEvent(sale, parcel) {
+  const sqft = parcel.square_footage ?? null;
+  const price = sale.sale_price;
+  const ppsf = sqft && price ? price / sqft : null;
+  const assessed =
+    (parcel.auditor_land_value ?? parcel.land_value ?? 0) +
+    (parcel.auditor_building_value ?? parcel.building_value ?? 0);
+  const saleToAssessed = assessed > 0 && price ? price / assessed : null;
+  const condition = parcel.condition ?? null;
+  const grade = parcel.grade ?? null;
+  const renovated_at_sale = isRenovatedSale(
+    price,
+    ppsf,
+    saleToAssessed,
+    condition,
+    grade,
+    RENOVATED_CFG
+  );
+
   return {
     event_id: `${sale.parcel_id}:${sale.sale_key ?? sale.sale_date}:${sale.sale_price}`,
     parcel_id: sale.parcel_id,
@@ -58,8 +87,12 @@ function buildSaleEvent(sale, parcel) {
     half_bath: parcel.half_bath ?? null,
     style: parcel.style ?? null,
     stories: parcel.stories ?? null,
-    condition: parcel.condition ?? null,
-    grade: parcel.grade ?? null,
+    condition,
+    grade,
+    condition_source: parcel.condition_source ?? "parcel_snapshot",
+    sale_ppsf: ppsf != null ? Math.round(ppsf * 100) / 100 : null,
+    sale_to_assessed: saleToAssessed != null ? Math.round(saleToAssessed * 1000) / 1000 : null,
+    renovated_at_sale,
     has_improvements: parcel.has_improvements ?? false,
     likely_vacant_land: parcel.likely_vacant_land ?? false,
     land_value: parcel.auditor_land_value ?? parcel.land_value ?? null,

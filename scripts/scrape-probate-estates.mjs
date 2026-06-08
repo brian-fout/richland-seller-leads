@@ -31,12 +31,13 @@ import {
   writeCanonicalFromDays,
 } from "./scrape-state.mjs";
 import { enrichProbateRecords } from "./enrich-probate-addresses.mjs";
+import { paths } from "../src/core/county-context.mjs";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE_ID = "probate-estates";
-const DATA_DIR = path.join(__dirname, "..", "data");
-const CAPTCHA_IMAGE = path.join(DATA_DIR, "probate-captcha.png");
-const LAST_RESULTS_HTML = path.join(DATA_DIR, "_probate-last-results.html");
+const p = paths();
+const DATA_DIR = p.dataRoot;
+const CAPTCHA_IMAGE = p.file("probate-captcha.png");
+const LAST_RESULTS_HTML = p.file("_probate-last-results.html");
 const DAY_RULE = "────────────────────────────────────────";
 
 function logDayHeader(label) {

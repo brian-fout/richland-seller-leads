@@ -40,6 +40,37 @@ export function isPoorConditionOrGrade(condition, grade) {
 }
 
 /**
+ * Strong retail price — overrides stale VP/D- parcel snapshot (post-flip sales).
+ */
+export function hasStrongRetailPriceSignals(price, ppsf, saleToAssessed, cfg = {}) {
+  const minStrongPrice = cfg.minStrongRetailPrice ?? 45000;
+  const minStrongPpsf = cfg.minStrongRetailPpsf ?? 42;
+  const minAssessedRatio = cfg.minStrongAssessedRatio ?? 1.35;
+
+  if (!price || !ppsf) return false;
+  if (price >= minStrongPrice && ppsf >= minStrongPpsf) return true;
+  if (saleToAssessed != null && saleToAssessed >= minAssessedRatio && price >= 40000 && ppsf >= 38) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Effective condition at sale time — parcel snapshot may lag after renovation.
+ */
+export function resolveSaleTimeCondition({ price, ppsf, saleToAssessed, condition, grade, cfg = {} }) {
+  const flipOverride = hasStrongRetailPriceSignals(price, ppsf, saleToAssessed, cfg);
+  const parcelPoor = isPoorConditionOrGrade(condition, grade);
+  return {
+    condition,
+    grade,
+    parcel_condition_poor: parcelPoor,
+    flip_price_override: flipOverride,
+    effective_poor: parcelPoor && !flipOverride,
+  };
+}
+
+/**
  * Classify whether a sale looks like a retail / renovated transfer.
  * Strong price signals override stale auditor condition (common after flips).
  */
@@ -52,10 +83,12 @@ export function isRenovatedSale(price, ppsf, saleToAssessed, condition, grade, c
   if (!ppsf || !price) return false;
   if (price <= maxAsIsPrice || ppsf <= maxAsIsPpsf) return false;
 
+  if (hasStrongRetailPriceSignals(price, ppsf, saleToAssessed, cfg)) return true;
   if (price >= minRetailPrice && ppsf >= minRetailPpsf) return true;
   if (saleToAssessed != null && saleToAssessed >= 1.5 && price >= 30000) return true;
 
-  if (isPoorConditionOrGrade(condition, grade)) return false;
+  const saleCtx = resolveSaleTimeCondition({ price, ppsf, saleToAssessed, condition, grade, cfg });
+  if (saleCtx.effective_poor) return false;
 
   if (price >= minRetailPrice) return true;
   if (ppsf >= minRetailPpsf) return true;

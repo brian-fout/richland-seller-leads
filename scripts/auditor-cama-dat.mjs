@@ -11,6 +11,7 @@ import { keyValueToParcelId } from "./beacon-parcel.mjs";
 import {
   ASMT,
   CHARGE,
+  DWELL,
   OWNDATMAX,
   realisticTaxYear,
   sliceField,
@@ -234,8 +235,11 @@ export function parseDwellLine(line) {
   if (!m) return null;
 
   const sqftM = line.match(DWELL_SQFT_RE);
-  const gradeRaw = line.slice(93, 96).trim();
+  const gradeRaw = sliceField(line, DWELL.grade).trim();
   const grade = gradeRaw.match(/^[A-Z][+-]?0?/)?.[0] ?? (gradeRaw || null);
+  const conditionRaw = sliceField(line, DWELL.condition).trim().toUpperCase();
+  const condition =
+    /^[A-Z]{2}$/.test(conditionRaw) || /^(P-|V-)$/.test(conditionRaw) ? conditionRaw : null;
   const styleCode = parseInt(m[5], 10);
 
   return {
@@ -253,6 +257,7 @@ export function parseDwellLine(line) {
     half_bath: parseInt(m[11], 10),
     square_footage: sqftM ? parseInt(sqftM[1], 10) : null,
     grade,
+    condition,
     source: "dwelling_dat",
   };
 }

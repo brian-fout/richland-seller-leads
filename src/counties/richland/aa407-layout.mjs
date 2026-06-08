@@ -34,6 +34,14 @@ export function sliceField(line, [start, end]) {
   return line.slice(start, end);
 }
 
+/** DWELL.DAT — condition code at fixed offset (verified vs GIS Parcel_CAMA). */
+export const DWELL = {
+  parcel_key: [0, 13],
+  condition: [253, 255],
+  grade: [93, 96],
+  record_length: 1177,
+};
+
 export function realisticTaxYear(value) {
   const year = parseInt(String(value ?? "").trim(), 10);
   if (!Number.isFinite(year)) return null;

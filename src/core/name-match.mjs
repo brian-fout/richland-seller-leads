@@ -55,6 +55,31 @@ export function isGarbagePartyName(name) {
   );
 }
 
+/** Banks, courts, churches, government — not useful for GIS homeowner lookup. */
+export function isInstitutionPartyName(name) {
+  const hay = clean(name).toUpperCase();
+  if (!hay || isGarbagePartyName(name)) return true;
+  return (
+    /\b(BANK|BANC|MORTGAGE|CREDIT UNION|SERVICING|TRUST COMPANY|NATIONAL ASSOCIATION|NA)\b/.test(hay) ||
+    /\b(LLC|INC|CORP|LTD|LP|L\.P\.|LIMITED PARTNERSHIP|PARTNERSHIP)\b/.test(hay) ||
+    /\b(COUNTY|COURT|CLERK|TREASURER|AUDITOR|PROSECUTOR|UNITED STATES|ATTORNEY)\b/.test(hay) ||
+    /\b(CHURCH|TRUSTEE|TITLE|GUARANTY|GUARNTY|AUCTION|REAL ESTAT|COMMERCIAL)\b/.test(hay) ||
+    /\b(FINANCIAL|FEDERAL|HOUSING|FINANCE|INVESTMENTS?)\b/.test(hay)
+  );
+}
+
+export function splitPartyNames(text) {
+  return clean(text)
+    .split(/\s*;\s*/)
+    .map((s) => clean(s))
+    .filter(Boolean);
+}
+
+/** Person-like party names from a semicolon-delimited recorder/court field. */
+export function personPartyNames(text) {
+  return splitPartyNames(text).filter((n) => !isInstitutionPartyName(n));
+}
+
 export function normalizePersonName(name) {
   let s = clean(name).toUpperCase();
   if (!s) return "";

@@ -65,6 +65,7 @@ function mergeRecord(gis, owners, asmt, sales, pardat, dwell, charge) {
   const year_built = auditorDwell?.year_built ?? gis.year_built ?? null;
   const style = auditorDwell?.style ?? gis.style ?? null;
   const grade = auditorDwell?.grade ?? gis.grade ?? null;
+  const condition = auditorDwell?.condition ?? gis.condition ?? null;
   const stories = auditorDwell?.stories ?? gis.stories ?? null;
 
   return {
@@ -77,6 +78,8 @@ function mergeRecord(gis, owners, asmt, sales, pardat, dwell, charge) {
     year_built,
     style,
     grade,
+    condition,
+    condition_source: auditorDwell?.condition ? "dwelling_dat" : gis.condition ? "gis" : null,
     stories,
     year_remodeled: auditorDwell?.year_remodeled ?? gis.year_remodeled ?? null,
     rooms: auditorDwell?.rooms ?? gis.rooms ?? null,

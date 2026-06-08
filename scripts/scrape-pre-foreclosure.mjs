@@ -23,9 +23,9 @@ import {
   parseUsDate,
   fmtUsDate,
 } from "./scrape-state.mjs";
+import { paths } from "../src/core/county-context.mjs";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OUT_DIR = path.join(__dirname, "..", "data");
+const p = paths();
 const REALAUCTION_BASE = "https://richland.sheriffsaleauction.ohio.gov";
 const COUNTY_SHERIFF_URL = "https://www.richlandcountyoh.gov/sheriffsales";
 const PREVIEW_URL = `${REALAUCTION_BASE}/index.cfm?zaction=AUCTION&zmethod=PREVIEW`;
@@ -367,7 +367,7 @@ function toCsv(records) {
 }
 
 async function main() {
-  fs.mkdirSync(OUT_DIR, { recursive: true });
+  fs.mkdirSync(p.dataRoot, { recursive: true });
   const force = process.argv.includes("--force");
   const sinceUsDate = force ? `01/01/${new Date().getFullYear()}` : incrementalFromUsDate(SOURCE_ID);
 

@@ -12,6 +12,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { paths } from "../src/core/county-context.mjs";
 import { findLatestTaxLienJson } from "../src/core/tax-lien-discovery.mjs";
+import { normalizeParcelId as normalizeParcelIdCore } from "../src/core/parcel-id.mjs";
 import { loadCanonicalRecords, toCsv } from "./scrape-state.mjs";
 
 const p = paths();
@@ -38,10 +39,7 @@ function clean(text) {
 }
 
 export function normalizeParcelId(value) {
-  const text = clean(value).toUpperCase();
-  if (!text) return null;
-  const m = text.match(/(\d{3}-\d{2}-\d{3}-\d{2}-\d{3})/);
-  return m ? m[1] : text;
+  return normalizeParcelIdCore(value);
 }
 
 function loadTaxLiens() {
@@ -154,10 +152,11 @@ function compactRecord(record, sourceId) {
 function bestAddress(recordsBySource) {
   const order = [
     "sheriff-sales",
+    "lis-pendens",
+    "clerk-foreclosures",
     "evictions",
     "code-violations",
     "probate-estates",
-    "clerk-foreclosures",
     "tax-liens",
   ];
   for (const sourceId of order) {

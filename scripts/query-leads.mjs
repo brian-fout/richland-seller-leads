@@ -4,12 +4,21 @@
  * Usage:
  *   npm run query:leads -- --county richland --limit 5
  *   npm run query:leads -- --county richland --city Mansfield --limit 5
- *   npm run query:leads -- --all-counties --limit 5
- *   npm run query:leads -- --counties richland,franklin --format table
+ *   npm run query:leads -- --needs-review --city Mansfield --limit 20
+ *   npm run query:leads -- --offer-ready --city Mansfield
+ *   npm run query:leads -- --format csv --export agent-review.csv
+ *   npm run export:agent-review -- --city Mansfield
  */
 
-import { getActiveCounty } from "../src/core/county-context.mjs";
-import { listActiveCounties, loadAllLeadCards, slimLeadRow } from "../src/core/platform-leads.mjs";
+import fs from "fs";
+import path from "path";
+import { getActiveCounty, paths } from "../src/core/county-context.mjs";
+import {
+  agentReviewRow,
+  listActiveCounties,
+  loadAllLeadCards,
+  slimLeadRow,
+} from "../src/core/platform-leads.mjs";
 
 function parseArgs() {
   const limitIdx = process.argv.indexOf("--limit");
@@ -17,6 +26,7 @@ function parseArgs() {
   const countiesIdx = process.argv.indexOf("--counties");
   const countyIdx = process.argv.indexOf("--county");
   const formatIdx = process.argv.indexOf("--format");
+  const exportIdx = process.argv.indexOf("--export");
 
   const allCounties = process.argv.includes("--all-counties");
   let counties = null;
@@ -31,6 +41,12 @@ function parseArgs() {
     counties = [getActiveCounty()];
   }
 
+  let exportPath = null;
+  if (exportIdx >= 0) {
+    const val = process.argv[exportIdx + 1];
+    exportPath = val && !val.startsWith("--") ? val : null;
+  }
+
   return {
     counties,
     city: cityIdx >= 0 ? process.argv[cityIdx + 1] : null,
@@ -38,7 +54,24 @@ function parseArgs() {
     format: formatIdx >= 0 ? process.argv[formatIdx + 1] : "table",
     listCounties: process.argv.includes("--list-counties"),
     includeDismissed: process.argv.includes("--include-dismissed"),
+    needsReview: process.argv.includes("--needs-review"),
+    offerReady: process.argv.includes("--offer-ready"),
+    exportPath,
   };
+}
+
+function escapeCsv(value) {
+  const s = value == null ? "" : String(value);
+  return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function formatCsv(rows, headers) {
+  const keys = headers ?? (rows.length ? Object.keys(rows[0]) : []);
+  const lines = [keys.join(",")];
+  for (const row of rows) {
+    lines.push(keys.map((k) => escapeCsv(row[k])).join(","));
+  }
+  return lines.join("\n");
 }
 
 function formatTable(rows) {
@@ -50,9 +83,12 @@ function formatTable(rows) {
     "parcel_id",
     "sources",
     "score",
-    "arv",
+    "effective_arv",
+    "model_arv",
     "agent_arv",
+    "agent_offer",
     "agent_verdict",
+    "offer_ready",
     "contact",
   ];
   const lines = [headers.join("\t")];
@@ -66,14 +102,22 @@ function formatTable(rows) {
         r.parcel_id ?? "",
         (r.sources ?? []).join("+"),
         r.rank_score ?? "",
+        r.effective_arv ?? "",
         r.arv_most_likely ?? "",
         r.agent_arv ?? "",
+        r.agent_offer_max ?? "",
         r.agent_verdict ?? "",
+        r.offer_ready ? "yes" : r.needs_agent_review ? "review" : "no",
         r.safe_to_contact ? "yes" : "no",
       ].join("\t")
     );
   }
   return lines.join("\n");
+}
+
+function defaultExportPath(counties) {
+  const county = counties[0] ?? getActiveCounty();
+  return path.join(paths(county).dataRoot, "agent-review-queue.csv");
 }
 
 function main() {
@@ -91,14 +135,32 @@ function main() {
     process.exit(1);
   }
 
+  const useAgentExport = args.needsReview || args.exportPath != null || args.format === "csv";
   const result = loadAllLeadCards({
     counties: args.counties,
     city: args.city,
-    limit: args.limit,
+    limit: args.exportPath ? null : args.limit,
     includeDismissed: args.includeDismissed,
+    needsReview: args.needsReview,
+    offerReady: args.offerReady,
   });
 
-  const rows = result.cards.map(slimLeadRow);
+  const rows = result.cards.map(useAgentExport ? agentReviewRow : slimLeadRow);
+  const limitedRows = args.exportPath ? rows.slice(0, args.limit > 0 ? args.limit : rows.length) : rows;
+
+  if (args.exportPath || (args.format === "csv" && args.needsReview)) {
+    const outPath = path.resolve(args.exportPath ?? defaultExportPath(args.counties));
+    const csv = formatCsv(limitedRows);
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, `${csv}\n`);
+    console.error(`Wrote ${limitedRows.length} rows → ${outPath}`);
+    return;
+  }
+
+  if (args.format === "csv") {
+    console.log(formatCsv(limitedRows));
+    return;
+  }
 
   if (args.format === "json") {
     console.log(
@@ -108,10 +170,12 @@ function main() {
             counties: args.counties,
             city: args.city ?? null,
             limit: args.limit,
+            needs_review: args.needsReview,
+            offer_ready: args.offerReady,
           },
           sources: result.sources,
           total_before_limit: result.total_before_limit,
-          rows,
+          rows: limitedRows,
         },
         null,
         2
@@ -127,12 +191,17 @@ function main() {
         ? `all counties (${args.counties.join(", ")})`
         : args.counties[0];
 
+  const filterNote = args.needsReview
+    ? ", needs_agent_review"
+    : args.offerReady
+      ? ", offer_ready"
+      : "";
   const dismissedNote =
     result.dismissed_excluded > 0 ? `, ${result.dismissed_excluded} dismissed excluded` : "";
   console.error(
-    `Top ${rows.length} leads — ${scope} (${result.total_before_limit} matched${dismissedNote})\n`
+    `Top ${limitedRows.length} leads — ${scope} (${result.total_before_limit} matched${filterNote}${dismissedNote})\n`
   );
-  console.log(formatTable(rows));
+  console.log(formatTable(limitedRows));
 }
 
 main();

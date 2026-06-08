@@ -40,8 +40,9 @@ function runStep(step) {
 
 function main() {
   const argv = new Set(process.argv.slice(2));
-  console.error("Richland lead refresh pipeline");
-  console.error("  Steps: link → property-profiles → lead-cards → batch:arv --merge");
+  console.error("Lead refresh pipeline");
+  console.error("  Steps: link → property-profiles → lead-cards → batch:arv --merge (agent ARV layer applied on merge)");
+  console.error("  Full stack: npm run refresh:leads:full  (CAMA + distress enrich + leads)");
 
   for (const step of STEPS) {
     if (step.skipFlag && argv.has(step.skipFlag)) {

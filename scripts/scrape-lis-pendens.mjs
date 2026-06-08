@@ -12,9 +12,9 @@
  */
 
 import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import { chromium } from "playwright";
+import { paths } from "../src/core/county-context.mjs";
+import { extractParcelFromText } from "../src/core/parcel-id.mjs";
 import {
   bootstrapUsDate,
   incrementalFromUsDate,
@@ -25,8 +25,7 @@ import {
   parseUsDate,
 } from "./scrape-state.mjs";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OUT_DIR = path.join(__dirname, "..", "data");
+const p = paths();
 const BASE = "https://countyfusion13.kofiletech.us/countyweb";
 const LOGIN_URL = `${BASE}/loginDisplay.action?countyname=RichlandOH`;
 
@@ -157,6 +156,7 @@ function parseLegalDescription(text) {
 
 function normalizeRecord(raw) {
   const { municipality, legal_description, remarks } = parseLegalDescription(raw.legal_description);
+  const parcel_id = extractParcelFromText(legal_description, remarks, raw.reference, municipality);
   return {
     source: "richland_recorder",
     instrument_id: raw.instrument_id ?? null,
@@ -171,6 +171,8 @@ function normalizeRecord(raw) {
     legal_description,
     remarks,
     reference: raw.reference ?? null,
+    parcel_id: parcel_id ?? null,
+    parcel_id_source: parcel_id ? "legal_description" : null,
   };
 }
 
@@ -489,7 +491,7 @@ async function scrapeLisPendens(ranges) {
 async function main() {
   const options = parseArgs();
   const ranges = buildDateRanges(options);
-  fs.mkdirSync(OUT_DIR, { recursive: true });
+  fs.mkdirSync(p.dataRoot, { recursive: true });
 
   if (ranges.length === 0) {
     const canonical = loadCanonicalRecords("lis-pendens-canonical.json");

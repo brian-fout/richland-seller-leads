@@ -47,6 +47,16 @@ export function filterByCity(cards, city) {
   });
 }
 
+export function filterByAgentReview(cards, { needsReview = false, offerReady = false } = {}) {
+  if (needsReview) {
+    return cards.filter((c) => c.needs_agent_review);
+  }
+  if (offerReady) {
+    return cards.filter((c) => c.offer_ready);
+  }
+  return cards;
+}
+
 /**
  * @param {string} countyId
  * @returns {{ county_id: string, cards: object[], envelope: object|null, file: string|null }}
@@ -74,9 +84,12 @@ export function loadCountyLeadCards(countyId) {
  * @param {number} [options.limit] — max rows after rank
  * @param {boolean} [options.rerank=true] — re-score merged set with shared rankLeads()
  * @param {boolean} [options.includeDismissed=false] — include manually dismissed parcels
+ * @param {boolean} [options.needsReview=false] — only leads awaiting agent verdict
+ * @param {boolean} [options.offerReady=false] — only agent-approved pursue leads
  */
 export function loadAllLeadCards(options = {}) {
-  const { city, limit, rerank = true, includeDismissed = false } = options;
+  const { city, limit, rerank = true, includeDismissed = false, needsReview = false, offerReady = false } =
+    options;
   let countyIds = options.counties?.length ? [...options.counties] : listActiveCounties();
 
   if (!countyIds.length) {
@@ -107,6 +120,7 @@ export function loadAllLeadCards(options = {}) {
   }
 
   cards = filterByCity(cards, city);
+  cards = filterByAgentReview(cards, { needsReview, offerReady });
 
   if (rerank) {
     cards = rankLeads(cards);
@@ -126,6 +140,29 @@ export function loadAllLeadCards(options = {}) {
   };
 }
 
+/** Row shape for agent weekly review CSV export. */
+export function agentReviewRow(card) {
+  const slim = slimLeadRow(card);
+  const arv = card.arv ?? {};
+  return {
+    ...slim,
+    condition: card.condition ?? null,
+    condition_label: card.condition_label ?? null,
+    grade: card.grade ?? null,
+    square_footage: card.square_footage ?? null,
+    total_value: card.total_value ?? card.auditor?.total_appraised_value ?? null,
+    prior_delq: card.prior_delq ?? card.property?.tax_lien?.prior_delq ?? null,
+    contact_owner: card.contact_owner ?? null,
+    mailing_address: card.mailing_address ?? null,
+    arv_confidence_score: arv.confidence?.score ?? null,
+    arv_trustworthy: arv.trustworthy_for_wholesale ?? false,
+    agent_rehab_estimate: card.agent_rehab_estimate ?? null,
+    review_prompt: slim.needs_agent_review
+      ? "npm run agent:feedback -- --parcel " + card.parcel_id + ' --text "your notes..."'
+      : null,
+  };
+}
+
 export function slimLeadRow(card) {
   const arv = card.arv ?? {};
   const arvMostLikely =
@@ -136,6 +173,7 @@ export function slimLeadRow(card) {
     null;
 
   const agent = card.agent_calibration ?? null;
+  const effectiveArv = card.effective_arv ?? arvMostLikely;
 
   return {
     rank: card.rank,
@@ -148,9 +186,14 @@ export function slimLeadRow(card) {
     rank_score: card.rank_score,
     safe_to_contact: card.safe_to_contact ?? null,
     arv_most_likely: arvMostLikely,
+    effective_arv: effectiveArv,
+    arv_source: card.arv_source ?? "model",
     arv_confidence: arv.confidence?.level ?? null,
     agent_arv: agent?.agent_arv ?? agent?.agent_arv_range?.high ?? null,
+    agent_offer_max: card.agent_offer_max ?? agent?.agent_offer_max ?? null,
     agent_verdict: agent?.agent_verdict ?? null,
+    needs_agent_review: card.needs_agent_review ?? false,
+    offer_ready: card.offer_ready ?? false,
     agent_drift_pct: card.agent_model_compare?.delta_pct ?? null,
   };
 }

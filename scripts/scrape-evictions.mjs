@@ -25,9 +25,10 @@ import {
   writeMonthOutputs,
   writeCanonicalFromMonths,
 } from "./scrape-state.mjs";
+import { paths } from "../src/core/county-context.mjs";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.join(__dirname, "..", "data");
+const p = paths();
+const DATA_DIR = p.dataRoot;
 const SOURCE_ID = "evictions";
 const BASE = "https://benchmark.mansfieldcity.com/BenchmarkWeb";
 const SEARCH_URL = `${BASE}/Home.aspx/Search`;

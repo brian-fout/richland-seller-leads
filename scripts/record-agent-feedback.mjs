@@ -25,6 +25,8 @@ import {
   parseFreeformFeedback,
   recordFeedback,
 } from "../src/core/agent-feedback.mjs";
+import { computeEffectiveArv } from "../src/core/effective-arv.mjs";
+import { loadCountyLeadCards } from "../src/core/platform-leads.mjs";
 
 function parseArgs() {
   const textIdx = process.argv.indexOf("--text");
@@ -66,17 +68,23 @@ async function loadRawText(args) {
   return null;
 }
 
-function formatShow(parcelId, calibration, feedbackPath) {
+function formatShow(parcelId, calibration, feedbackPath, countyId) {
   const agent = getAgentCalibrationForParcel(calibration, parcelId);
   const history = loadAgentFeedback(feedbackPath).filter(
     (e) => e.parcel_id === parcelId || e.parsed?.parcel_ids?.includes(parcelId)
   );
+  const card = loadCountyLeadCards(countyId).cards.find((c) => c.parcel_id === parcelId) ?? null;
+  const modelArv = card?.arv?.most_likely_arv ?? card?.arv?.mid ?? null;
+  const layer = card ? computeEffectiveArv(card) : computeEffectiveArv({ agent_calibration: agent, arv: card?.arv });
 
   console.log(
     JSON.stringify(
       {
         parcel_id: parcelId,
         calibration: agent,
+        model_arv: modelArv,
+        agent_model_compare: compareAgentToModel(agent, modelArv),
+        effective_arv_layer: layer,
         history_count: history.length,
         history: history.slice(-5),
       },
@@ -111,7 +119,7 @@ async function main() {
   }
 
   if (args.show) {
-    formatShow(args.show, loadAgentCalibration(calibrationPath), feedbackPath);
+    formatShow(args.show, loadAgentCalibration(calibrationPath), feedbackPath, args.county);
     return;
   }
 

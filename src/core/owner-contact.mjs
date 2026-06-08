@@ -1,6 +1,6 @@
 /**
  * @shared Resolve who is safe to contact for outreach.
- * GIS/CAMA owner is reference only — never used as the contact target without verification.
+ * Auditor CAMA (OWNDATMAX) is the bulk truth source; Beacon is optional spot-check only.
  */
 
 function clean(text) {
@@ -106,31 +106,32 @@ export function resolveOwnerContact({ cluster, profile, beacon = null, auditor =
       : null);
   const hasTaxLienSource = cluster.sources?.includes("tax-liens") ?? false;
   const candidates = distressOwnerCandidates(cluster.records);
+  const beaconOk = beacon?.status === "ok" && beacon.owner_name;
 
   let contactOwner = null;
   let contactOwnerSource = null;
   let ownerVerification = "unverified";
   let safeToContact = false;
-  let gisOwnerStale = auditor?.gis_owner_stale ?? false;
+  let gisOwnerStale = auditor?.gis_owner_stale ?? auditorComp?.gis_owner_stale ?? false;
   let ownerWarning = null;
+  let beaconSpotCheck = null;
 
-  if (beacon?.status === "ok" && beacon.owner_name) {
-    contactOwner = beacon.owner_name;
-    contactOwnerSource = "beacon";
-    ownerVerification = "verified";
-    safeToContact = true;
-    if (ownersDiffer(gisOwner, contactOwner)) {
-      gisOwnerStale = true;
-      ownerWarning = `GIS owner "${gisOwner}" differs from Beacon — do not contact GIS owner.`;
-    }
-  } else if (auditorOwner) {
+  if (auditorOwner) {
     contactOwner = auditorOwner;
     contactOwnerSource = "auditor_cama";
     ownerVerification = "verified";
     safeToContact = true;
     if (ownersDiffer(gisOwner, auditorOwner)) {
       gisOwnerStale = true;
-      ownerWarning = `GIS owner "${gisOwner}" differs from auditor CAMA — do not contact GIS owner.`;
+      ownerWarning = `GIS owner "${gisOwner}" differs from auditor CAMA — use CAMA owner only.`;
+    }
+    if (beaconOk && ownersDiffer(auditorOwner, beacon.owner_name)) {
+      beaconSpotCheck = "disagrees";
+      ownerWarning =
+        (ownerWarning ? `${ownerWarning} ` : "") +
+        `Beacon spot-check disagrees ("${beacon.owner_name}") — prefer auditor CAMA unless you re-verify.`;
+    } else if (beaconOk) {
+      beaconSpotCheck = "confirms";
     }
   } else if (hasTaxLienSource && taxLienOwner) {
     contactOwner = taxLienOwner;
@@ -141,31 +142,47 @@ export function resolveOwnerContact({ cluster, profile, beacon = null, auditor =
       gisOwnerStale = true;
       ownerWarning = `GIS owner "${gisOwner}" differs from tax cert list — use cert list owner only.`;
     }
+    if (beaconOk && ownersDiffer(taxLienOwner, beacon.owner_name)) {
+      beaconSpotCheck = "disagrees";
+      ownerWarning =
+        (ownerWarning ? `${ownerWarning} ` : "") +
+        `Beacon spot-check disagrees — confirm owner before outreach.`;
+    }
+  } else if (beaconOk) {
+    contactOwner = beacon.owner_name;
+    contactOwnerSource = "beacon";
+    ownerVerification = "beacon_only";
+    safeToContact = true;
+    ownerWarning = "Owner from Beacon only — no auditor CAMA overlay on this parcel.";
+    if (ownersDiffer(gisOwner, contactOwner)) {
+      gisOwnerStale = true;
+      ownerWarning += ` GIS owner "${gisOwner}" differs from Beacon.`;
+    }
   } else {
     const reviewCandidate = candidates.find((c) => !c.safe_to_contact);
     if (reviewCandidate) {
       ownerWarning =
-        "Owner not verified — distress record names may be tenant, decedent, or case party. Confirm via Beacon before outreach.";
+        "Owner not verified — distress record names may be tenant, decedent, or case party. Use auditor CAMA or a Beacon spot-check before outreach.";
     } else if (gisOwner) {
-      ownerWarning = `GIS owner "${gisOwner}" is unverified and may be stale — confirm via Beacon before outreach.`;
+      ownerWarning = `GIS owner "${gisOwner}" is unverified and may be stale — import auditor CAMA or run a Beacon spot-check.`;
       gisOwnerStale = null;
     } else {
-      ownerWarning = "No verified owner — confirm via Beacon before outreach.";
+      ownerWarning = "No verified owner — run import:auditor-cama or a Beacon spot-check before outreach.";
     }
   }
 
   const mailing_address =
-    beacon?.status === "ok" && beacon.mailing_address
-      ? beacon.mailing_address
-      : auditorMailing ?? profile?.tax_lien?.mailing_address ?? null;
-  const mailing_source =
-    beacon?.status === "ok" && beacon.mailing_address
+    auditorMailing ??
+    (beaconOk && beacon.mailing_address ? beacon.mailing_address : null) ??
+    profile?.tax_lien?.mailing_address ??
+    null;
+  const mailing_source = auditorMailing
+    ? "auditor_cama"
+    : beaconOk && beacon.mailing_address
       ? "beacon"
-      : auditorMailing
-        ? "auditor_cama"
-        : profile?.tax_lien?.mailing_address
-          ? "tax_lien_cert"
-          : null;
+      : profile?.tax_lien?.mailing_address
+        ? "tax_lien_cert"
+        : null;
 
   return {
     gis_owner_name: gisOwner,
@@ -178,6 +195,7 @@ export function resolveOwnerContact({ cluster, profile, beacon = null, auditor =
     safe_to_contact: safeToContact,
     gis_owner_stale: gisOwnerStale,
     owner_warning: ownerWarning,
+    beacon_spot_check: beaconSpotCheck,
     owner_candidates: candidates,
     owner_name: contactOwner,
   };

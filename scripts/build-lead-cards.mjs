@@ -29,10 +29,9 @@ import {
   saveOwnerSnapshots,
   saveSuppressions,
 } from "../src/core/lead-suppressions.mjs";
-import {
-  compareAgentToModel,
-  loadAgentCalibration,
-} from "../src/core/agent-feedback.mjs";
+import { loadAgentCalibration } from "../src/core/agent-feedback.mjs";
+import { applyAgentArvLayer } from "../src/core/effective-arv.mjs";
+import { labelCondition } from "../src/counties/richland/code-lookups.mjs";
 
 const p = paths();
 const PROFILES_BY_PARCEL = p.propertyProfilesByParcel;
@@ -82,6 +81,9 @@ function applyAuditorAttributes(card, auditorRec) {
     half_bath: auditorRec.half_bath ?? card.half_bath ?? null,
     style: auditorRec.style ?? card.style ?? null,
     grade: auditorRec.grade ?? card.grade ?? null,
+    condition: auditorRec.condition ?? card.condition ?? null,
+    condition_label: labelCondition(auditorRec.condition ?? card.condition),
+    condition_source: auditorRec.condition_source ?? card.condition_source ?? null,
     stories: auditorRec.stories ?? card.stories ?? null,
     prior_delq:
       auditorRec.prior_delinquent ??
@@ -175,6 +177,7 @@ function summarizeCards(cards) {
     safe_to_contact: cards.filter((c) => c.safe_to_contact).length,
     needs_owner_verification: cards.filter((c) => !c.safe_to_contact).length,
     beacon_verified: cards.filter((c) => c.contact_owner_source === "beacon").length,
+    beacon_spot_check_confirms: cards.filter((c) => c.beacon_spot_check === "confirms").length,
     auditor_cama_owner: cards.filter((c) => c.contact_owner_source === "auditor_cama").length,
     cert_list_owner: cards.filter((c) => c.contact_owner_source === "tax_lien_cert").length,
     gis_owner_stale: cards.filter((c) => c.gis_owner_stale).length,
@@ -238,13 +241,8 @@ function main() {
     };
   }).map((card) => {
     const agent = agentCalibration.by_parcel?.[card.parcel_id] ?? null;
-    if (!agent) return card;
-    const modelArv = card.arv?.most_likely_arv ?? card.arv?.mid ?? null;
-    return {
-      ...card,
-      agent_calibration: agent,
-      agent_model_compare: compareAgentToModel(agent, modelArv),
-    };
+    const withAgent = agent ? { ...card, agent_calibration: agent } : card;
+    return applyAgentArvLayer(withAgent);
   });
 
   const suppressions = loadSuppressions(p.leadSuppressions);
